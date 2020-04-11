@@ -1,0 +1,170 @@
+# Global Variables
+
+library(plyr)
+library(corrplot)
+library(tidyverse)
+library(caret)
+library(scatterplot3d)
+library(psych)
+library(tidyr)
+
+weather = read.csv("/Users/SETHCRIDER/Desktop/NYC_weather.csv")
+nypd = read.csv("/Users/SETHCRIDER/Desktop/NYPD_7_Major_Felony_Incidents.csv")
+
+dats=seq(as.Date("2015-01-01"),as.Date("2015-12-31"),by=1)
+fdats=as.Date(nypd$Occurrence.Date, format="%m/%d/%Y")
+tab <- cbind(nypd, date = fdats)
+
+summary(weather)
+datsweather=as.Date(weather$EST, format="%m/%d/%Y") 
+weatherappend <- cbind(weather, date = datsweather)
+weatherappend <- weatherappend[-c(274:365),]
+
+__________________________________________________________________________
+
+# Model of Daily Aggregate Crime Frequency to Weather Factors 
+
+tabfilter = tab[which(tab$date>='2015-01-01'),c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21)]
+tabfilter = tabfilter[-c(274:365),]
+a = table(tabfilter$date)
+b = as.data.frame(a)
+colnames(b) <- c("date","freq")
+b <- b[c("freq","date")]
+
+DayCount = table(tabfilter$date)
+CrimeCount =  table(tabfilter$Offense)
+
+df<-cbind(weatherappend, freq = b$freq)
+v = as.factor(df$PrecipitationIn)
+v = gsub("T", 0.1, v)
+v= as.numeric(v)
+
+df<-cbind(df, precipitationIn = v)
+
+nums <- unlist(lapply(df, is.numeric))  
+mcor <- df[ , nums]
+mydata.cor = cor(mcor)
+quartz()
+corrplot(mydata.cor)
+quartz()
+plot(freq~date, data=df, main="Crime Per Day Over Time",
+   xlab="Time (2015_01_01 - 2015_09_30)", ylab= "Crimes Per Day")
+quartz()
+featurePlot(x=mcor[c("Mean.TemperatureF","Min.TemperatureF")],y=mcor$freq, plot="pairs")
+
+ggplot(gather(mcor), aes(value)) + 
+    geom_hist(bins = 10) + 
+    facet_wrap(~key, scales = 'free_x')
+
+
+model<-lm( freq ~ Min.TemperatureF, mcor)
+model1<- lm( freq ~ Min.TemperatureF+Max.TemperatureF, mcor)
+
+quartz()
+par(mfrow=c(2,2)) 
+plot(model) 
+summary(bigM)
+
+quartz()
+par(mfrow=c(2,2)) 
+plot(model1) 
+summary(midM)
+
+anova(model,model1)
+
+
+newdatamodel = data.frame( 
+Min.TemperatureF=70)
+
+newdatamodel1= data.frame( 
+Max.TemperatureF=70, 
+Min.TemperatureF=80)
+
+predict(model,newdatamodel)
+predict(model1,newdatamodel1)
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+quartz()
+pred.int <- predict(model, interval = "prediction")
+mydata <- cbind(mcor, pred.int)
+p <- ggplot(mydata, aes(Min.TemperatureF, freq)) +
+  geom_point() +
+  stat_smooth(method = lm)
+  p + geom_line(aes(y = lwr), color = "red", linetype = "dashed")+
+    geom_line(aes(y = upr), color = "red", linetype = "dashed")
+
+min(mcor$Min.TemperatureF)
+max(mcor$Min.TemperatureF)
+
+quartz()
+Min.TemperatureF <- seq(2,82, by=1) ## make a girth vector
+freq <- seq(132,364, by=1) ## make a height vector
+pred_grid <- expand.grid(Min.TemperatureF = Min.TemperatureF, freq = freq)
+
+pred_grid$freq2 <-predict(model, new = pred_grid)
+fit_2_sp <- scatterplot3d(pred_grid$freq, pred_grid$Min.TemperatureF, pred_grid$freq2, angle = 10, color = "dodgerblue", pch = 1, ylab = "Min.Temp", xlab = "Freq", zlab = "Predictions" )
+fit_2_sp$points3d(mcor$freq, mcor$Min.TemperatureF, mcor$freq, pch=16)
+
+
+ggplot(mcor, aes(Min.TemperatureF, Max.TemperatureF, col=freq)) + geom_point() +
+             geom_smooth(method="lm", se=FALSE) + facet_wrap(~ Mean.TemperatureF)
+
+________________________________________________________________________________________________________________________________________________________
+
+# Model of Offense Types (Frequency) and correlation to weather factors 
+
+UN=unique(nypd$Offense)
+dcounts=matrix(ncol=length(UN),nrow=length(dats))
+for (i in 1:length(dats))
+{
+for (j in 1:length(UN))
+{
+dcounts[i,j]=length(which(fdats==dats[i] & nypd$Offense==UN[j]))
+}
+}
+
+dcounts=data.frame(dcounts)
+dcounts <- cbind(dcounts, date = dats)
+dcounts <- dcounts[-c(274:365),]
+names(dcounts)<-c("MURDER","RAPE","ROBBERY","FEL_ASSAULT","BURGLARY","GRAND_LR","GRAND_LR_MV","date")
+
+dcounts<-cbind(dcounts, df)
+nums <- unlist(lapply(dcounts, is.numeric)) 
+mcor <- dcounts[ , nums]
+mydata.cor = cor(mcor)
+corrplot(mydata.cor)
+
+
+cor(mcor$FEL_ASSAULT, mcor$Max.TemperatureF)
+cor(mcor$FEL_ASSAULT, mcor$Min.TemperatureF)
+
+
+model2 <- lm(FEL_ASSAULT~Min.TemperatureF+Max.TemperatureF, data=mcor)
+
+quartz()
+par(mfrow=c(2,2)) 
+plot(model3) 
+summary(mode3)
+
+min(mcor$Mean.TemperatureF)
+max(mcor$Mean.TemperatureF)
+
+ggplot(mcor) + 
+  geom_jitter(aes(FEL_ASSAULT,Min.TemperatureF), colour="blue") + geom_smooth(aes(FEL_ASSAULT,Min.TemperatureF), method=lm, se=FALSE) +
+  geom_jitter(aes(FEL_ASSAULT,Max.TemperatureF), colour="green") + geom_smooth(aes(FEL_ASSAULT,Max.TemperatureF), method=lm, se=FALSE) +
+  labs(x = "", y = "")
+
+quartz()
+ggplot(mcor, aes(Min.TemperatureF, FEL_ASSAULT, col=freq)) + geom_point() +
+             geom_smooth(method="lm", se=FALSE) + facet_wrap(~FEL_ASSAULT)
+
+quartz()
+ggplot(mcor, aes(Max.TemperatureF, FEL_ASSAULT, col=freq)) + geom_point() +
+             geom_smooth(method="lm", se=FALSE) + facet_wrap(~FEL_ASSAULT)
+
+newdata = data.frame( 
+Mean.TemperatureF=70, 
+MeanDew.PointF=5)
+
+predict(bigM, newdata)
+
